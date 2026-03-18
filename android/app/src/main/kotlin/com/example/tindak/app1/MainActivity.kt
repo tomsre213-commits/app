@@ -1,4 +1,4 @@
-package com.example.tindak
+package tindak.app1
 
 import io.flutter.embedding.android.FlutterActivity
 

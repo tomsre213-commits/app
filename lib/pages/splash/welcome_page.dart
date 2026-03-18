@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tindak/core/app_colors.dart';
 import 'package:tindak/core/app_text_styles.dart';
-import 'package:tindak/pages/auth/login_page.dart';
+import 'package:tindak/pages/auth/signup_email_page.dart';
 
 class WelcomePage extends StatelessWidget {
   const WelcomePage({super.key});
@@ -10,7 +10,7 @@ class WelcomePage extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const LoginPage(),
+        builder: (context) => const SignUpEmailPage(),
       ),
     );
   }

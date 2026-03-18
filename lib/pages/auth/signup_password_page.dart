@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:tindak/core/app_colors.dart';
 import 'package:tindak/core/app_text_styles.dart';
+import 'package:tindak/services/auth_service.dart';
 
 class SignUpPasswordPage extends StatefulWidget {
-  const SignUpPasswordPage({super.key});
+  final String email;
+
+  const SignUpPasswordPage({
+    super.key,
+    required this.email,
+  });
 
   @override
   State<SignUpPasswordPage> createState() => _SignUpPasswordPageState();
@@ -11,7 +17,12 @@ class SignUpPasswordPage extends StatefulWidget {
 
 class _SignUpPasswordPageState extends State<SignUpPasswordPage> {
   final TextEditingController _passwordController = TextEditingController();
+  final AuthService _authService = AuthService();
+
   bool _obscureText = true;
+  bool _isLoading = false;
+
+  bool get _isPasswordValid => _passwordController.text.trim().length >= 6;
 
   @override
   void dispose() {
@@ -19,7 +30,45 @@ class _SignUpPasswordPageState extends State<SignUpPasswordPage> {
     super.dispose();
   }
 
-  bool get _isPasswordValid => _passwordController.text.trim().length >= 6;
+  Future<void> _createAccount() async {
+    final password = _passwordController.text.trim();
+
+    if (password.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Password must be at least 6 characters"),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    final error = await _authService.signUp(
+      email: widget.email,
+      password: password,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error)),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Account created successfully")),
+      );
+
+      Navigator.popUntil(context, (route) => route.isFirst);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -80,7 +129,7 @@ class _SignUpPasswordPageState extends State<SignUpPasswordPage> {
             ),
             const SizedBox(height: 18),
             const Text(
-              'Atleast 6 characters.',
+              'At least 6 characters.',
               style: AppTextStyles.description,
               textAlign: TextAlign.center,
             ),
@@ -100,7 +149,9 @@ class _SignUpPasswordPageState extends State<SignUpPasswordPage> {
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed: _isPasswordValid ? () {} : null,
+                onPressed: (_isPasswordValid && !_isLoading)
+                    ? _createAccount
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.buttonGreen,
                   disabledBackgroundColor: const Color(0xFFD9D9DD),
@@ -109,9 +160,9 @@ class _SignUpPasswordPageState extends State<SignUpPasswordPage> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                child: const Text(
-                  'Next',
-                  style: TextStyle(
+                child: Text(
+                  _isLoading ? 'Creating...' : 'Next',
+                  style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
                   ),
