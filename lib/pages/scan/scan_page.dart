@@ -1,6 +1,7 @@
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:tindak/pages/ride/user_navigation_page.dart';
 
 class ScanPage extends StatefulWidget {
   const ScanPage({super.key});
@@ -197,7 +198,12 @@ class _ScanPageState extends State<ScanPage> {
                               _isUnlocking = false;
                             });
 
-                            Navigator.pop(this.context, normalizedCode);
+                            Navigator.pushReplacement(
+                              this.context,
+                              MaterialPageRoute(
+                                builder: (_) => UserNavigationPage(bikeId: normalizedCode),
+                              ),
+                            );
                           } catch (e) {
                             if (!mounted) return;
 
