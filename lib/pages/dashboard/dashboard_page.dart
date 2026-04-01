@@ -355,7 +355,13 @@ class _DashboardPageState extends State<DashboardPage> {
                           _actionChip(
                             icon: Icons.report_gmailerrorred_outlined,
                             label: 'Report Issue',
-                            onTap: () {},
+                            onTap: () {
+                              Navigator.pop(context);
+                              _showReportIssueBottomSheet(
+                                bikeId: bikeId,
+                                bikeName: bikeName,
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -573,6 +579,230 @@ class _DashboardPageState extends State<DashboardPage> {
     super.initState();
     _loadBikeIcon();
     _initializePermissions();
+  }
+
+  final List<String> _issueOptions = [
+    'Handlebar',
+    'QR code',
+    'Tube',
+    'Brakes',
+    'Throttle',
+    'Light',
+    'Battery',
+    'Kickstand',
+    'Deck',
+    'Wheels',
+    'Display',
+    'Tire',
+    'Bell',
+    'Doesn’t start',
+    'Other',
+  ];
+
+  Future<void> _submitReportedIssue({
+    required String bikeId,
+    required String bikeName,
+    required List<String> issues,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    await FirebaseDatabase.instance.ref().child('reported_issues').push().set({
+      'bikeId': bikeId,
+      'bikeName': bikeName,
+      'issues': issues,
+      'reportedAt': now,
+      'reportedBy': user?.uid,
+      'reportedByEmail': user?.email,
+      'status': 'pending',
+    });
+  }
+
+  void _showReportIssueBottomSheet({
+    required String bikeId,
+    required String bikeName,
+  }) {
+    final Set<String> selectedIssues = {};
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFF6F4F7),
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(30),
+                ),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    18,
+                    10,
+                    18,
+                    MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade400,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          InkWell(
+                            onTap: () => Navigator.pop(sheetContext),
+                            borderRadius: BorderRadius.circular(18),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.arrow_back_ios_new,
+                                size: 20,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Report damage',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        width: double.infinity,
+                        height: 1,
+                        color: Colors.grey.shade300,
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'Select all issues that apply',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        alignment: WrapAlignment.center,
+                        children: _issueOptions.map((issue) {
+                          final isSelected = selectedIssues.contains(issue);
+
+                          return GestureDetector(
+                            onTap: () {
+                              setSheetState(() {
+                                if (isSelected) {
+                                  selectedIssues.remove(issue);
+                                } else {
+                                  selectedIssues.add(issue);
+                                }
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? const Color(0xFF62D84E)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                              child: Text(
+                                issue,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : Colors.black87,
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 22),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            if (selectedIssues.isEmpty) {
+                              ScaffoldMessenger.of(this.context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Please select at least one issue',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            await _submitReportedIssue(
+                              bikeId: bikeId,
+                              bikeName: bikeName,
+                              issues: selectedIssues.toList(),
+                            );
+
+                            if (!mounted) return;
+
+                            Navigator.pop(sheetContext);
+
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Issue report sent successfully'),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF62D84E),
+                            foregroundColor: Colors.black,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                          ),
+                          child: const Text(
+                            'Send',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _initializePermissions() async {
@@ -1006,7 +1236,9 @@ class _DashboardPageState extends State<DashboardPage> {
                           _rentActionItem(
                             icon: Icons.history,
                             title: 'Rental History',
-                            onTap: () => _openModalPage(const RentalHistoryPage()),
+                            // onTap: () => _openModalPage(const RentalHistoryPage()),
+                            onTap: () => _openModalPage(const HistoryPage()),
+
                           ),
                           _rentActionItem(
                             icon: Icons.payments_outlined,
