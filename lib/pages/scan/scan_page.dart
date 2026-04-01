@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -43,6 +44,17 @@ class _ScanPageState extends State<ScanPage> {
     return 'unlocked';
   }
 
+  Future<void> _assignBikeToUser(String bikeId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    await FirebaseDatabase.instance.ref('users/${user.uid}/currentRide').set({
+      'bikeId': bikeId,
+      'startedAt': ServerValue.timestamp,
+      'status': 'active',
+    });
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -62,7 +74,6 @@ class _ScanPageState extends State<ScanPage> {
     debugPrint('Scanned QR raw value: [$code]');
 
     String normalizedCode = code.toLowerCase().trim();
-
     normalizedCode = normalizedCode.replaceAll(' ', '');
     normalizedCode = normalizedCode.replaceAll('_', '');
 
@@ -166,9 +177,9 @@ class _ScanPageState extends State<ScanPage> {
 
                             if (!mounted) return;
 
-                            Navigator.pop(dialogContext);
-
                             if (result == 'already_unlocked') {
+                              Navigator.pop(dialogContext);
+
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
@@ -184,6 +195,10 @@ class _ScanPageState extends State<ScanPage> {
                               });
                               return;
                             }
+
+                            await _assignBikeToUser(normalizedCode);
+
+                            Navigator.pop(dialogContext);
 
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -201,7 +216,9 @@ class _ScanPageState extends State<ScanPage> {
                             Navigator.pushReplacement(
                               this.context,
                               MaterialPageRoute(
-                                builder: (_) => UserNavigationPage(bikeId: normalizedCode),
+                                builder: (_) => UserNavigationPage(
+                                  bikeId: normalizedCode,
+                                ),
                               ),
                             );
                           } catch (e) {
@@ -211,7 +228,8 @@ class _ScanPageState extends State<ScanPage> {
 
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('Failed to unlock bike: $e'),
+                                content:
+                                Text('Failed to unlock bike: $e'),
                                 backgroundColor: Colors.red,
                               ),
                             );
