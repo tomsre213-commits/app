@@ -21,6 +21,7 @@ class UserNavigationPage extends StatefulWidget {
 
 class _UserNavigationPageState extends State<UserNavigationPage> {
   GoogleMapController? _mapController;
+  String? _lastGeofenceStatus;
 
   static const LatLng _defaultCenter = LatLng(8.2415, 124.2439);
 
@@ -352,6 +353,11 @@ class _UserNavigationPageState extends State<UserNavigationPage> {
 
           final newBikePosition = LatLng(lat, lng);
 
+          await _updateGeofenceStatus(
+            bikeId: bikeId,
+            position: newBikePosition,
+          );
+
           if (_lastTrackedBikePosition == null) {
             _lastTrackedBikePosition = newBikePosition;
 
@@ -503,6 +509,65 @@ class _UserNavigationPageState extends State<UserNavigationPage> {
     }
 
     return totalMeters;
+  }
+
+  bool _isPointInsideAnyPolygon(LatLng point) {
+    for (final polygon in _msuIitPolygons) {
+      if (_isPointInPolygon(point, polygon.points)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isPointInPolygon(LatLng point, List<LatLng> polygon) {
+    bool isInside = false;
+    int j = polygon.length - 1;
+
+    for (int i = 0; i < polygon.length; i++) {
+      final double xi = polygon[i].latitude;
+      final double yi = polygon[i].longitude;
+      final double xj = polygon[j].latitude;
+      final double yj = polygon[j].longitude;
+
+      final bool intersect =
+          ((yi > point.longitude) != (yj > point.longitude)) &&
+              (point.latitude <
+                  (xj - xi) *
+                      (point.longitude - yi) /
+                      ((yj - yi) == 0 ? 0.0000001 : (yj - yi)) +
+                      xi);
+
+      if (intersect) {
+        isInside = !isInside;
+      }
+
+      j = i;
+    }
+
+    return isInside;
+  }
+
+  Future<void> _updateGeofenceStatus({
+    required String bikeId,
+    required LatLng position,
+  }) async {
+    final bool isInside = _isPointInsideAnyPolygon(position);
+    final String newStatus = isInside ? 'in' : 'out';
+
+    if (_lastGeofenceStatus == newStatus) return;
+
+    _lastGeofenceStatus = newStatus;
+
+    try {
+      await _bikesRef.child(bikeId).update({
+        'notif': newStatus,
+      });
+
+      debugPrint('Geofence status updated: $newStatus');
+    } catch (e) {
+      debugPrint('Failed to update geofence status: $e');
+    }
   }
 
   List<LatLng> _extractTrackPointsFromRoute(Map<dynamic, dynamic> routeData) {
@@ -714,6 +779,7 @@ class _UserNavigationPageState extends State<UserNavigationPage> {
       await _bikesRef.child(widget.bikeId).update({
         'padlock': 'locked',
         'reserveUntil': 0,
+        'notif': 'not use',
       });
 
       await _usersRef.child('${user.uid}/history').push().set({

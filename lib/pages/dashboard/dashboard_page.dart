@@ -17,7 +17,7 @@ import 'package:tindak/pages/settings/settings_page.dart';
 import 'package:tindak/pages/scan/scan_page.dart';
 
 import 'package:tindak/pages/rent_bike/manage_bike_page.dart';
-import 'package:tindak/pages/rent_bike/rental_history_page.dart';
+// import 'package:tindak/pages/rent_bike/rental_history_page.dart';
 import 'package:tindak/pages/rent_bike/earnings_page.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -52,6 +52,57 @@ class _DashboardPageState extends State<DashboardPage> {
   BitmapDescriptor? _greenBikeIcon;
   BitmapDescriptor? _redBikeIcon;
   BitmapDescriptor? _blueBikeIcon;
+
+  double _totalKilometers = 0;
+  int _totalRides = 0;
+
+  final DatabaseReference _usersRef =
+  FirebaseDatabase.instance.ref().child('users');
+
+  void _updateUserStatsFromHistory(dynamic raw) {
+    if (raw == null || raw is! Map) {
+      if (!mounted) return;
+      setState(() {
+        _totalKilometers = 0;
+        _totalRides = 0;
+      });
+      return;
+    }
+
+    final historyMap = Map<dynamic, dynamic>.from(raw);
+
+    double totalMeters = 0;
+    int totalRides = 0;
+
+    for (final entry in historyMap.entries) {
+      if (entry.value is! Map) continue;
+
+      final item = Map<dynamic, dynamic>.from(entry.value);
+      final status = item['status']?.toString().toLowerCase() ?? 'completed';
+
+      if (status != 'completed') continue;
+
+      final distanceMeters = item['distanceMeters'] is num
+          ? (item['distanceMeters'] as num).toDouble()
+          : double.tryParse(item['distanceMeters']?.toString() ?? '') ?? 0;
+
+      totalMeters += distanceMeters;
+      totalRides++;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _totalKilometers = totalMeters / 1000.0;
+      _totalRides = totalRides;
+    });
+  }
+
+  String _formatKilometers(double km) {
+    if (km == 0) return '0';
+    if (km < 10) return km.toStringAsFixed(2);
+    if (km < 100) return km.toStringAsFixed(1);
+    return km.toStringAsFixed(0);
+  }
 
   void _startReserveTimer(String bikeId, VoidCallback? onTick) {
     _reserveTimer?.cancel();
@@ -144,6 +195,26 @@ class _DashboardPageState extends State<DashboardPage> {
             final lat = double.tryParse(mapValue['latitude'].toString());
             final lng = double.tryParse(mapValue['longitude'].toString());
 
+            final reserveUntilRaw = mapValue['reserveUntil'];
+            final int reserveUntil = reserveUntilRaw is int
+                ? reserveUntilRaw
+                : int.tryParse(reserveUntilRaw?.toString() ?? '') ?? 0;
+
+            final int now = DateTime.now().millisecondsSinceEpoch;
+
+            if (_reservedBikeId == key.toString()) {
+              if (reserveUntil == 0 || reserveUntil <= now) {
+                _reserveTimer?.cancel();
+
+                if (mounted) {
+                  setState(() {
+                    _reservedBikeId = null;
+                    _reserveSecondsLeft = 0;
+                  });
+                }
+              }
+            }
+
             final padlock = mapValue['padlock']?.toString().toLowerCase() ?? 'locked';
 
             final icon = (padlock == 'unlocked')
@@ -171,6 +242,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     bikeName: 'Bike ${bikeId.replaceAll('bike', '').padLeft(3, '0')}',
                     priceText: '10 php to start, then 5 php/min',
                     padlockStatus: padlock,
+                    reserveUntil: reserveUntil,
                   ),
                 ),
               );
@@ -200,6 +272,7 @@ class _DashboardPageState extends State<DashboardPage> {
     required String bikeName,
     required String priceText,
     required String padlockStatus,
+    required int reserveUntil,
   }) {
     showModalBottomSheet(
       context: context,
@@ -208,10 +281,25 @@ class _DashboardPageState extends State<DashboardPage> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, modalSetState) {
-            final bool isInUse = padlockStatus == 'unlocked';
-            final bool isReserved =
-                padlockStatus == 'reserve' ||
-                    (!isInUse && _reservedBikeId == bikeId && _reserveSecondsLeft > 0);
+            final int now = DateTime.now().millisecondsSinceEpoch;
+
+            final bool isInUse =
+                padlockStatus == 'unlocked' || padlockStatus == 'unlock';
+
+            final bool isReservedInFirebase =
+                padlockStatus == 'reserve' && reserveUntil > now;
+
+            final bool isReservedLocally =
+                _reservedBikeId == bikeId && _reserveSecondsLeft > 0;
+
+            final bool isReserved = !isInUse && (isReservedInFirebase || isReservedLocally);
+
+            final int firebaseSecondsLeft =
+            reserveUntil > now ? ((reserveUntil - now) / 1000).ceil() : 0;
+
+            final int displaySecondsLeft = isReservedInFirebase
+                ? firebaseSecondsLeft
+                : _reserveSecondsLeft;
 
             return Container(
               decoration: const BoxDecoration(
@@ -300,7 +388,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                           borderRadius: BorderRadius.circular(20),
                                         ),
                                         child: Text(
-                                          _formatReserveTime(_reserveSecondsLeft),
+                                          _formatReserveTime(displaySecondsLeft),
                                           style: const TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.w700,
@@ -447,6 +535,13 @@ class _DashboardPageState extends State<DashboardPage> {
                               ? null
                               : () async {
                             if (isReserved) {
+                              final user = FirebaseAuth.instance.currentUser;
+                              final userEmail = user?.email ?? '';
+
+                              await _bikesRef.child(bikeId).update({
+                                'userEmail': userEmail,
+                              });
+
                               Navigator.pop(context);
 
                               final result = await Navigator.push(
@@ -1355,26 +1450,98 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 ),
               const SizedBox(height: 28),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _statItem(
-                        icon: Icons.alt_route,
-                        value: '0',
-                        label: 'kilometers',
+              Builder(
+                builder: (context) {
+                  final user = FirebaseAuth.instance.currentUser;
+
+                  if (user == null) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _statItem(
+                              icon: Icons.alt_route,
+                              value: '0',
+                              label: 'kilometers',
+                            ),
+                          ),
+                          Expanded(
+                            child: _statItem(
+                              icon: Icons.pedal_bike,
+                              value: '0',
+                              label: 'Rides',
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    Expanded(
-                      child: _statItem(
-                        icon: Icons.pedal_bike,
-                        value: '0',
-                        label: 'Rides',
-                      ),
-                    ),
-                  ],
-                ),
+                    );
+                  }
+
+                  return StreamBuilder<DatabaseEvent>(
+                    stream: _usersRef.child('${user.uid}/history').onValue,
+                    builder: (context, snapshot) {
+                      double totalKilometers = 0;
+                      int totalRides = 0;
+
+                      final raw = snapshot.data?.snapshot.value;
+
+                      if (raw != null && raw is Map) {
+                        final historyMap = Map<dynamic, dynamic>.from(raw);
+
+                        for (final entry in historyMap.entries) {
+                          if (entry.value is! Map) continue;
+
+                          final item = Map<dynamic, dynamic>.from(entry.value);
+                          final status =
+                              item['status']?.toString().toLowerCase() ?? 'completed';
+
+                          if (status != 'completed') continue;
+
+                          final distanceMeters = item['distanceMeters'] is num
+                              ? (item['distanceMeters'] as num).toDouble()
+                              : double.tryParse(item['distanceMeters']?.toString() ?? '') ?? 0;
+
+                          totalKilometers += distanceMeters / 1000.0;
+                          totalRides++;
+                        }
+                      }
+
+                      String formattedKm;
+                      if (totalKilometers == 0) {
+                        formattedKm = '0';
+                      } else if (totalKilometers < 10) {
+                        formattedKm = totalKilometers.toStringAsFixed(2);
+                      } else if (totalKilometers < 100) {
+                        formattedKm = totalKilometers.toStringAsFixed(1);
+                      } else {
+                        formattedKm = totalKilometers.toStringAsFixed(0);
+                      }
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _statItem(
+                                icon: Icons.alt_route,
+                                value: formattedKm,
+                                label: 'kilometers',
+                              ),
+                            ),
+                            Expanded(
+                              child: _statItem(
+                                icon: Icons.pedal_bike,
+                                value: totalRides.toString(),
+                                label: 'Rides',
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
               const SizedBox(height: 24),
               _drawerItem(
