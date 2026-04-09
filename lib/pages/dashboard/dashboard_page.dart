@@ -121,6 +121,7 @@ class _DashboardPageState extends State<DashboardPage> {
         await _bikesRef.child(bikeId).update({
           'padlock': 'locked',
           'reserveUntil': 0,
+          'userEmail': null,
         });
 
         if (!mounted) return;
@@ -157,6 +158,7 @@ class _DashboardPageState extends State<DashboardPage> {
       await _bikesRef.child(bikeId).update({
         'padlock': 'locked',
         'reserveUntil': 0,
+        'userEmail': null,
       });
     }
   }
